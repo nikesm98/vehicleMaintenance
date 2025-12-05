@@ -88,49 +88,66 @@ class MaintenanceSubmitResponse(BaseModel):
 
 # Clerk JWT verification
 async def verify_clerk_token(authorization: Optional[str] = Header(None)) -> UserInfo:
+    # -------------------------------------------------------------
+    # BYPASS MODE (Local Development)
+    # -------------------------------------------------------------
+    # if os.getenv("SKIP_AUTH", "false").lower() == "true":
+    #     return UserInfo(
+    #         user_id="dev-user",
+    #         email="dev@example.com",
+    #         full_name="Developer Mode"
+    #     )
+    
+    # # -------------------------------------------------------------
+    # # HARDCODED TEST TOKEN (manually bypass)
+    # # -------------------------------------------------------------
+    # TEST_TOKEN = "Bearer eyJhbGciOiJSUzI1NiIsImN..."
+    # if authorization == TEST_TOKEN:
+    #     return UserInfo(
+    #         user_id='nikesm',
+    #         email='nikesm9818@gmail.com',
+    #         full_name='Nikhil Singh Mahara'
+    #     )
+
+    # -------------------------------------------------------------
+    # NORMAL VERIFICATION
+    # -------------------------------------------------------------
     if not authorization:
         raise HTTPException(status_code=401, detail="Authorization header required")
-    
+
     try:
         token = authorization.replace("Bearer ", "")
-        
-        # Get JWKS from Clerk
-        # Extract the domain from publishable key
-        # pk_test_bm9ybWFsLXR1cmtleS0xNy5jbGVyay5hY2NvdW50cy5kZXYk
-        # Base64 decode: normal-turkey-17.clerk.accounts.dev
-        import base64
-        pk_data = CLERK_PUBLISHABLE_KEY.replace('pk_test_', '').replace('pk_live_', '')
-        # Add padding if needed
-        padding = 4 - len(pk_data) % 4
-        if padding != 4:
-            pk_data += '=' * padding
-        clerk_domain = base64.b64decode(pk_data).decode('utf-8')
-        
+
+        # Clerk domain comes directly from .env
+        clerk_domain = os.getenv("CLERK_DOMAIN")
+        if not clerk_domain:
+            raise HTTPException(status_code=500, detail="CLERK_DOMAIN not configured")
+
         jwks_url = f"https://{clerk_domain}/.well-known/jwks.json"
-        
+
         # Fetch JWKS
         async with httpx.AsyncClient() as client:
             response = await client.get(jwks_url)
             jwks = response.json()
-        
-        # Get the key
+
+        # Get header
         headers = jwt.get_unverified_header(token)
         kid = headers.get('kid')
-        
+
         # Find matching key
         key = None
         for k in jwks.get('keys', []):
             if k.get('kid') == kid:
                 key = k
                 break
-        
+
         if not key:
-            raise HTTPException(status_code=401, detail="Unable to find appropriate key")
-        
-        # Build RSA public key from JWK
+            raise HTTPException(status_code=401, detail="Unable to find matching JWK key")
+
+        # Build public key
         from jwt.algorithms import RSAAlgorithm
         public_key = RSAAlgorithm.from_jwk(json.dumps(key))
-        
+
         # Verify token
         payload = jwt.decode(
             token,
@@ -138,29 +155,36 @@ async def verify_clerk_token(authorization: Optional[str] = Header(None)) -> Use
             algorithms=['RS256'],
             options={"verify_aud": False}
         )
-        
+
         # Extract user info
         user_id = payload.get('sub', '')
         email = payload.get('email', '') or payload.get('primary_email_address', '')
         full_name = payload.get('name', '') or payload.get('full_name', '')
-        
-        # If email/name not in token, we might need to fetch from Clerk API
-        if not email or not full_name:
-            # Use session claims
-            email = email or payload.get('email_addresses', [{}])[0].get('email_address', '') if isinstance(payload.get('email_addresses'), list) else ''
-            full_name = full_name or f"{payload.get('first_name', '')} {payload.get('last_name', '')}".strip()
-        
+
+        # fallback fields
+        if not email:
+            emails = payload.get("email_addresses", [])
+            if isinstance(emails, list) and emails:
+                email = emails[0].get("email_address", "")
+
+        if not full_name:
+            first = payload.get("first_name", "")
+            last = payload.get("last_name", "")
+            full_name = f"{first} {last}".strip()
+
         return UserInfo(
             user_id=user_id,
-            email=email or 'unknown@email.com',
-            full_name=full_name or 'Unknown User'
+            email=email or "unknown@example.com",
+            full_name=full_name or "Unknown User"
         )
-        
+
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
+
     except jwt.InvalidTokenError as e:
         logger.error(f"Invalid token: {e}")
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+
     except Exception as e:
         logger.error(f"Token verification error: {e}")
         raise HTTPException(status_code=401, detail=f"Token verification failed: {str(e)}")
@@ -176,14 +200,25 @@ async def health_check():
 
 @api_router.get("/vehicles")
 async def get_vehicles():
-    """Return list of 65 vehicle numbers"""
-    vehicles = []
-    prefixes = ["DL", "HR", "UP", "RJ", "PB"]
-    for i, prefix in enumerate(prefixes):
-        for j in range(1, 14):
-            num = (i * 13) + j
-            vehicles.append(f"{prefix}{str(j).zfill(2)}XX{str(1000 + num)}")
-    return {"vehicles": vehicles[:65]}
+    """Return fixed list of 65 vehicle numbers"""
+    vehicles = [
+        "HR55AZ3114", "HR55AP7119", "HR55AP1908", "HR55AP5443", "HR55AP3537",
+        "HR55AP9057", "HR55AP1181", "HR55AP6189", "HR55AP8302", "HR55AP3538",
+        "HR55AP2933", "HR55AP9013", "HR55AP4716", "HR55AP6982", "HR55AP1569",
+        "HR55AP7671", "HR55AP3523", "HR55AP0407", "HR55AP0740", "HR55AP7396",
+        "HR55AP1657", "HR55AR2073", "HR55AR1287", "HR55AR4913", "HR55AR3298",
+        "HR55AR2616", "HR55AR1698", "HR55AR4395", "HR55AR4507", "HR55AR2561",
+        "HR55AR7377", "NL01AE4999", "NL01AE4997", "NL01AE4995", "NL01AE4993",
+        "NL01AE4991", "NL01AE4989", "NL01AE4987", "NL01AE4985", "NL01AE4983",
+        "NL01AE4981", "NL01AE4979", "NL01AE4975", "NL01AE4973", "NL01AE4971",
+        "NL01AE4969", "NL01AE4967", "NL01AE4965", "NL01AE4963", "NL01AE4961",
+        "NL01AE4959", "NL01AE4957", "NL01AE4955", "NL01AE4953", "NL01AE4951",
+        "NL01AD6494", "NL01AD4558", "NL01AD4557", "NL01AD4556", "NL01AD4444",
+        "NL01AD4443", "NL01AD4442", "NL01AD4441", "NL01AD4440", "NL01AE4977",
+    ]
+
+    return {"vehicles": vehicles}
+
 
 @api_router.post("/maintenance/submit", response_model=MaintenanceSubmitResponse)
 async def submit_maintenance(request: MaintenanceSubmitRequest, user: UserInfo = Depends(verify_clerk_token)):
@@ -221,7 +256,8 @@ async def submit_maintenance(request: MaintenanceSubmitRequest, user: UserInfo =
                         json={
                             "action": "submit",
                             "data": log_data
-                        }
+                        },
+                        headers={"Content-Type": "application/json"}
                     )
                     result = apps_script_response.json()
                     if result.get("success"):
