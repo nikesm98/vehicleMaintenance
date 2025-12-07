@@ -207,7 +207,7 @@ const MaintenanceForm = () => {
 
     setLoading(true);
     try {
-      const token = await getToken();
+      const token = await getToken({ template: "fleet_token" });
       
       const payload = {
         vehicle_number: vehicleNumber,

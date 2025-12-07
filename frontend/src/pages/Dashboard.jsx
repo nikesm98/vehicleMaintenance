@@ -31,7 +31,7 @@ const Dashboard = () => {
   const fetchLogs = async (search = '') => {
     try {
       setLoading(true);
-      const token = await getToken();
+      const token = await getToken({ template: "fleet_token" });
       const params = search ? `?vehicle=${encodeURIComponent(search)}` : '';
       const response = await axios.get(`${API}/maintenance/logs${params}`, {
         headers: {
@@ -88,7 +88,7 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
-      <header className="border-b border-slate-200 bg-white sticky top-0 z-50">
+      <header className="border-b border-slate-200 bg-white sticky top-0 z-50 shadow-sm">
         <div className="container mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button
@@ -100,7 +100,7 @@ const Dashboard = () => {
             >
               <ArrowLeft className="w-5 h-5" />
             </Button>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-4">
               <div className="w-10 h-10 rounded-xl bg-[#007BC1] flex items-center justify-center">
                 <Truck className="w-6 h-6 text-white" />
               </div>
@@ -111,7 +111,7 @@ const Dashboard = () => {
             </div>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <Button
               onClick={() => navigate('/maintenance')}
               className="bg-[#007BC1] hover:bg-[#006299] text-white"
@@ -126,7 +126,7 @@ const Dashboard = () => {
       </header>
 
       {/* Search and Stats */}
-      <div className="container mx-auto px-4 sm:px-6 py-6">
+      <div className="container mx-auto px-4 sm:px-6 py-6 space-y-10">
         <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between mb-6">
           <form onSubmit={handleSearch} className="flex gap-2 w-full sm:w-auto">
             <div className="relative flex-1 sm:w-80">
@@ -157,10 +157,10 @@ const Dashboard = () => {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-10">
           <Card className="border-slate-200">
             <CardContent className="p-4">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-xl bg-[#007BC1]/10 flex items-center justify-center">
                   <FileText className="w-5 h-5 text-[#007BC1]" />
                 </div>
@@ -174,7 +174,7 @@ const Dashboard = () => {
           
           <Card className="border-slate-200">
             <CardContent className="p-4">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
                   <Truck className="w-5 h-5 text-green-600" />
                 </div>
@@ -190,7 +190,7 @@ const Dashboard = () => {
           
           <Card className="border-slate-200">
             <CardContent className="p-4">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
                   <CircleDot className="w-5 h-5 text-amber-600" />
                 </div>
@@ -206,7 +206,7 @@ const Dashboard = () => {
           
           <Card className="border-slate-200">
             <CardContent className="p-4">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
                   <ImageIcon className="w-5 h-5 text-blue-600" />
                 </div>
@@ -245,14 +245,14 @@ const Dashboard = () => {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4">
+          <div className="grid gap-6">
             {logs.map((log, index) => (
               <Card 
                 key={log.record_id || index} 
                 className="border-slate-200 hover:border-[#007BC1]/30 transition-all duration-200 hover:shadow-md"
                 data-testid={`log-card-${index}`}
               >
-                <CardContent className="p-6">
+                <CardContent className="p-8">
                   <div className="flex flex-col lg:flex-row lg:items-start gap-6">
                     {/* Main Info */}
                     <div className="flex-1">
@@ -324,7 +324,7 @@ const Dashboard = () => {
                     </div>
 
                     {/* Created By */}
-                    <div className="lg:w-64 p-4 bg-slate-50 rounded-xl">
+                    <div className="lg:w-64 p-4 bg-slate-50 rounded-xl border border-slate-200">
                       <div className="flex items-center gap-2 mb-2">
                         <User className="w-4 h-4 text-slate-500" />
                         <span className="text-xs font-medium text-slate-500">Created By</span>

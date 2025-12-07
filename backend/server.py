@@ -157,11 +157,12 @@ async def verify_clerk_token(authorization: Optional[str] = Header(None)) -> Use
         )
 
         # Extract user info
-        user_id = payload.get('sub', '')
-        email = payload.get('email', '') or payload.get('primary_email_address', '')
-        full_name = payload.get('name', '') or payload.get('full_name', '')
-
+        user_id = payload.get('user_id')
+        email = payload.get('email')
+        full_name = payload.get('full_name')
         # fallback fields
+        if not user_id:
+            user_id = payload.get("sub")
         if not email:
             emails = payload.get("email_addresses", [])
             if isinstance(emails, list) and emails:
