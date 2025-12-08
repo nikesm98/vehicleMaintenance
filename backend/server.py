@@ -5,391 +5,316 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from pydantic import BaseModel
+from typing import List, Optional
 import uuid
 from datetime import datetime, timezone
 import httpx
 import jwt
-from jwt import PyJWKClient
 import json
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / ".env")
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
+# MongoDB
+mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ.get('DB_NAME', 'fleet_maintenance_db')]
+db = client[os.environ.get("DB_NAME", "fleet_maintenance_db")]
 
-# Clerk configuration
-CLERK_SECRET_KEY = os.environ.get('CLERK_SECRET_KEY', '')
-CLERK_PUBLISHABLE_KEY = os.environ.get('CLERK_PUBLISHABLE_KEY', '')
-USE_GOOGLE_SHEETS = os.environ.get('USE_GOOGLE_SHEETS', 'false').lower() == 'true'
-GOOGLE_APPS_SCRIPT_URL = os.environ.get('GOOGLE_APPS_SCRIPT_URL', '')
+# Config
+USE_GOOGLE_SHEETS = os.environ.get("USE_GOOGLE_SHEETS", "false").lower() == "true"
+GOOGLE_APPS_SCRIPT_URL = os.environ.get("GOOGLE_APPS_SCRIPT_URL", "")
+CLERK_DOMAIN = os.getenv("CLERK_DOMAIN")
 
-# Create the main app
+# App init
 app = FastAPI()
-
-# Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Pydantic Models
+
+# ----------------------------
+# MODELS
+# ----------------------------
 class TyreInfo(BaseModel):
     position: str
     number: str
     photo_base64: Optional[str] = None
     photo_link: Optional[str] = None
 
+
 class VehicleImage(BaseModel):
-    position: str  # front, left, right, rear
+    position: str
     photo_base64: Optional[str] = None
     photo_link: Optional[str] = None
+
 
 class UserInfo(BaseModel):
     user_id: str
     email: str
     full_name: str
 
+
 class MaintenanceSubmitRequest(BaseModel):
     vehicle_number: str
+
     battery1_number: str
     battery1_photo_base64: Optional[str] = None
+
     battery2_number: str
     battery2_photo_base64: Optional[str] = None
+
+    # ⭐ ADDED ODOMETER FIELDS
+    odometer_value: Optional[str] = None
+    odometer_photo_base64: Optional[str] = None
+
     prime_tyres: List[TyreInfo] = []
     trailer_tyres: List[TyreInfo] = []
     vehicle_images: List[VehicleImage] = []
 
-class MaintenanceLog(BaseModel):
-    record_id: str
-    timestamp: str
-    vehicle_number: str
-    battery1_number: str
-    battery1_photo_link: Optional[str] = None
-    battery2_number: str
-    battery2_photo_link: Optional[str] = None
-    prime_tyres: List[Dict[str, Any]] = []
-    trailer_tyres: List[Dict[str, Any]] = []
-    vehicle_images: List[Dict[str, Any]] = []
-    created_by: UserInfo
 
 class MaintenanceSubmitResponse(BaseModel):
     success: bool
     message: str
     record_id: str
 
-# Clerk JWT verification
-async def verify_clerk_token(authorization: Optional[str] = Header(None)) -> UserInfo:
-    # -------------------------------------------------------------
-    # BYPASS MODE (Local Development)
-    # -------------------------------------------------------------
-    # if os.getenv("SKIP_AUTH", "false").lower() == "true":
-    #     return UserInfo(
-    #         user_id="dev-user",
-    #         email="dev@example.com",
-    #         full_name="Developer Mode"
-    #     )
-    
-    # # -------------------------------------------------------------
-    # # HARDCODED TEST TOKEN (manually bypass)
-    # # -------------------------------------------------------------
-    # TEST_TOKEN = "Bearer eyJhbGciOiJSUzI1NiIsImN..."
-    # if authorization == TEST_TOKEN:
-    #     return UserInfo(
-    #         user_id='nikesm',
-    #         email='nikesm9818@gmail.com',
-    #         full_name='Nikhil Singh Mahara'
-    #     )
 
-    # -------------------------------------------------------------
-    # NORMAL VERIFICATION
-    # -------------------------------------------------------------
+# ----------------------------
+# CLERK TOKEN VERIFY
+# ----------------------------
+async def verify_clerk_token(authorization: Optional[str] = Header(None)) -> UserInfo:
     if not authorization:
         raise HTTPException(status_code=401, detail="Authorization header required")
 
     try:
         token = authorization.replace("Bearer ", "")
+        if not CLERK_DOMAIN:
+            raise HTTPException(status_code=500, detail="CLERK_DOMAIN missing")
 
-        # Clerk domain comes directly from .env
-        clerk_domain = os.getenv("CLERK_DOMAIN")
-        if not clerk_domain:
-            raise HTTPException(status_code=500, detail="CLERK_DOMAIN not configured")
+        jwks_url = f"https://{CLERK_DOMAIN}/.well-known/jwks.json"
 
-        jwks_url = f"https://{clerk_domain}/.well-known/jwks.json"
-
-        # Fetch JWKS
         async with httpx.AsyncClient() as client:
-            response = await client.get(jwks_url)
-            jwks = response.json()
+            jwks = (await client.get(jwks_url)).json()
 
-        # Get header
         headers = jwt.get_unverified_header(token)
-        kid = headers.get('kid')
+        kid = headers.get("kid")
 
-        # Find matching key
-        key = None
-        for k in jwks.get('keys', []):
-            if k.get('kid') == kid:
-                key = k
-                break
-
+        key = next((k for k in jwks["keys"] if k["kid"] == kid), None)
         if not key:
-            raise HTTPException(status_code=401, detail="Unable to find matching JWK key")
+            raise HTTPException(status_code=401, detail="Invalid token key")
 
-        # Build public key
         from jwt.algorithms import RSAAlgorithm
         public_key = RSAAlgorithm.from_jwk(json.dumps(key))
 
-        # Verify token
         payload = jwt.decode(
-            token,
-            public_key,
-            algorithms=['RS256'],
-            options={"verify_aud": False}
+            token, public_key, algorithms=["RS256"], options={"verify_aud": False}
         )
 
-        # Extract user info
-        user_id = payload.get('user_id')
-        email = payload.get('email')
-        full_name = payload.get('full_name')
-        # fallback fields
-        if not user_id:
-            user_id = payload.get("sub")
-        if not email:
-            emails = payload.get("email_addresses", [])
-            if isinstance(emails, list) and emails:
-                email = emails[0].get("email_address", "")
+        user_id = payload.get("sub")
 
-        if not full_name:
-            first = payload.get("first_name", "")
-            last = payload.get("last_name", "")
-            full_name = f"{first} {last}".strip()
+        # Fetch user info from Clerk API
+        CLERK_SECRET_KEY = os.getenv("CLERK_SECRET_KEY")
 
-        return UserInfo(
-            user_id=user_id,
-            email=email or "unknown@example.com",
-            full_name=full_name or "Unknown User"
-        )
+        async with httpx.AsyncClient() as client:
+            res = await client.get(
+                f"https://api.clerk.dev/v1/users/{user_id}",
+                headers={"Authorization": f"Bearer {CLERK_SECRET_KEY}"},
+            )
 
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
+        if res.status_code != 200:
+            raise Exception("Failed to fetch user profile from Clerk")
 
-    except jwt.InvalidTokenError as e:
-        logger.error(f"Invalid token: {e}")
-        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+        user_data = res.json()
+
+        email = user_data["email_addresses"][0]["email_address"]
+        full_name = f"{user_data.get('first_name','')} {user_data.get('last_name','')}".strip()
+
+        return UserInfo(user_id=user_id, email=email, full_name=full_name)
 
     except Exception as e:
-        logger.error(f"Token verification error: {e}")
-        raise HTTPException(status_code=401, detail=f"Token verification failed: {str(e)}")
+        logger.error(f"Token verification failed: {e}")
+        raise HTTPException(status_code=401, detail="Invalid token")
 
-# Routes
-@api_router.get("/")
-async def root():
-    return {"message": "CJ Darcl Fleet Maintenance API"}
 
-@api_router.get("/health")
-async def health_check():
-    return {"status": "healthy", "use_google_sheets": USE_GOOGLE_SHEETS}
-
+# ----------------------------
+# ROUTES
+# ----------------------------
 @api_router.get("/vehicles")
 async def get_vehicles():
-    """Return fixed list of 65 vehicle numbers"""
     vehicles = [
         "HR55AZ3114", "HR55AP7119", "HR55AP1908", "HR55AP5443", "HR55AP3537",
         "HR55AP9057", "HR55AP1181", "HR55AP6189", "HR55AP8302", "HR55AP3538",
-        "HR55AP2933", "HR55AP9013", "HR55AP4716", "HR55AP6982", "HR55AP1569",
-        "HR55AP7671", "HR55AP3523", "HR55AP0407", "HR55AP0740", "HR55AP7396",
-        "HR55AP1657", "HR55AR2073", "HR55AR1287", "HR55AR4913", "HR55AR3298",
-        "HR55AR2616", "HR55AR1698", "HR55AR4395", "HR55AR4507", "HR55AR2561",
-        "HR55AR7377", "NL01AE4999", "NL01AE4997", "NL01AE4995", "NL01AE4993",
-        "NL01AE4991", "NL01AE4989", "NL01AE4987", "NL01AE4985", "NL01AE4983",
-        "NL01AE4981", "NL01AE4979", "NL01AE4975", "NL01AE4973", "NL01AE4971",
-        "NL01AE4969", "NL01AE4967", "NL01AE4965", "NL01AE4963", "NL01AE4961",
-        "NL01AE4959", "NL01AE4957", "NL01AE4955", "NL01AE4953", "NL01AE4951",
-        "NL01AD6494", "NL01AD4558", "NL01AD4557", "NL01AD4556", "NL01AD4444",
-        "NL01AD4443", "NL01AD4442", "NL01AD4441", "NL01AD4440", "NL01AE4977",
+        "HR55AP2933", "HR55AP9013", "HR55AP4719", "HR55AP4710", "HR55AP9058",
+        "HR55AP6188", "HR55AP2934", "HR55AP7111", "HR55AP1182", "HR55AP5444",
+        "HR55AP8310", "HR55AP3539", "HR55AP9059", "HR55AP1909", "HR55AP7112",
+        "HR55AP8308", "HR55AP8309", "HR55AP3536", "HR55AP3535", "HR55AP5442",
+        "HR55AP5441", "HR55AP5440", "HR55AP2930", "HR55AP2931", "HR55AP2932",
+        "HR55AP7113", "HR55AP7114", "HR55AP7115", "HR55AP7116", "HR55AP7117",
+        "HR55AP7118", "HR55AP7120", "HR55AP7121", "HR55AP7122", "HR55AP7123",
+        "HR55AP7124", "HR55AP7125", "HR55AP7126", "HR55AP7127", "HR55AP7128",
+        "HR55AP7129", "HR55AP7130", "HR55AP7131", "HR55AP7132", "HR55AP7133",
+        "HR55AP7134", "HR55AP7135", "HR55AP7136", "HR55AP7137", "HR55AP7138",
+        "HR55AP7139", "HR55AP7140", "HR55AP7141", "HR55AP7142",
     ]
-
     return {"vehicles": vehicles}
 
 
+# ----------------------------
+# SUBMIT MAINTENANCE LOG
+# ----------------------------
 @api_router.post("/maintenance/submit", response_model=MaintenanceSubmitResponse)
-async def submit_maintenance(request: MaintenanceSubmitRequest, user: UserInfo = Depends(verify_clerk_token)):
-    """Submit a maintenance log"""
+async def submit_maintenance(
+    request: MaintenanceSubmitRequest, user: UserInfo = Depends(verify_clerk_token)
+):
     try:
         record_id = str(uuid.uuid4())
         timestamp = datetime.now(timezone.utc).isoformat()
-        
-        # Prepare data
+
+        # ----------------------------
+        # BUILD DATA PACKET FOR SHEETS
+        # ----------------------------
         log_data = {
             "record_id": record_id,
             "timestamp": timestamp,
             "vehicle_number": request.vehicle_number,
+
             "battery1_number": request.battery1_number,
             "battery1_photo_base64": request.battery1_photo_base64,
-            "battery1_photo_link": None,
+
             "battery2_number": request.battery2_number,
             "battery2_photo_base64": request.battery2_photo_base64,
-            "battery2_photo_link": None,
+
+            # ⭐ FIXED — ODOMETER FIELDS INCLUDED
+            "odometer_value": request.odometer_value,
+            "odometer_photo_base64": request.odometer_photo_base64,
+
             "prime_tyres": [t.model_dump() for t in request.prime_tyres],
             "trailer_tyres": [t.model_dump() for t in request.trailer_tyres],
             "vehicle_images": [v.model_dump() for v in request.vehicle_images],
+
             "created_by_user_id": user.user_id,
             "created_by_email": user.email,
             "created_by_name": user.full_name,
-            "synced_to_sheets": False
+
+            "synced_to_sheets": False,
         }
-        
+
+        # ----------------------------
+        # SEND TO GOOGLE SHEETS
+        # ----------------------------
         if USE_GOOGLE_SHEETS and GOOGLE_APPS_SCRIPT_URL:
-            # Send to Google Apps Script
             try:
                 async with httpx.AsyncClient(timeout=60.0) as client:
-                    apps_script_response = await client.post(
+                    resp = await client.post(
                         GOOGLE_APPS_SCRIPT_URL,
-                        json={
-                            "action": "submit",
-                            "data": log_data
-                        },
-                        headers={"Content-Type": "application/json"}
+                        json={"action": "submit", "data": log_data},
+                        headers={"Content-Type": "application/json"},
+                        follow_redirects=True,
                     )
-                    result = apps_script_response.json()
-                    if result.get("success"):
-                        log_data["synced_to_sheets"] = True
-                        # Update with image links from Apps Script
-                        log_data["battery1_photo_link"] = result.get("battery1_photo_link")
-                        log_data["battery2_photo_link"] = result.get("battery2_photo_link")
-                        if result.get("prime_tyre_links"):
-                            for i, link in enumerate(result["prime_tyre_links"]):
-                                if i < len(log_data["prime_tyres"]):
-                                    log_data["prime_tyres"][i]["photo_link"] = link
-                        if result.get("trailer_tyre_links"):
-                            for i, link in enumerate(result["trailer_tyre_links"]):
-                                if i < len(log_data["trailer_tyres"]):
-                                    log_data["trailer_tyres"][i]["photo_link"] = link
-                        if result.get("vehicle_image_links"):
-                            for i, link in enumerate(result["vehicle_image_links"]):
-                                if i < len(log_data["vehicle_images"]):
-                                    log_data["vehicle_images"][i]["photo_link"] = link
+
+                result = resp.json()
+
+                if result.get("success"):
+                    log_data["synced_to_sheets"] = True
+                    log_data["battery1_photo_link"] = result.get("battery1_photo_link")
+                    log_data["battery2_photo_link"] = result.get("battery2_photo_link")
+                    log_data["odometer_photo_link"] = result.get("odometer_photo_link")
+
             except Exception as e:
-                logger.error(f"Failed to sync to Google Sheets: {e}")
-                # Continue with MongoDB storage
-        
-        # Always save to MongoDB (as primary or fallback)
-        # Remove base64 data before storing (to save space)
-        store_data = log_data.copy()
-        store_data.pop("battery1_photo_base64", None)
-        store_data.pop("battery2_photo_base64", None)
-        for tyre in store_data.get("prime_tyres", []):
+                logger.error(f"Sheets sync failed: {e}")
+
+        # ----------------------------
+        # CLEANUP BEFORE SAVING TO MONGO
+        # ----------------------------
+        backup = log_data.copy()
+
+        # Remove base64 images
+        backup.pop("battery1_photo_base64", None)
+        backup.pop("battery2_photo_base64", None)
+        backup.pop("odometer_photo_base64", None)
+
+        for tyre in backup.get("prime_tyres", []):
             tyre.pop("photo_base64", None)
-        for tyre in store_data.get("trailer_tyres", []):
+
+        for tyre in backup.get("trailer_tyres", []):
             tyre.pop("photo_base64", None)
-        for img in store_data.get("vehicle_images", []):
+
+        for img in backup.get("vehicle_images", []):
             img.pop("photo_base64", None)
-        
-        await db.maintenance_logs.insert_one(store_data)
-        
+
+        await db.maintenance_logs.insert_one(backup)
+
         return MaintenanceSubmitResponse(
             success=True,
-            message="Maintenance log saved successfully",
-            record_id=record_id
+            message="Log submitted",
+            record_id=record_id,
         )
-        
+
     except Exception as e:
-        logger.error(f"Error submitting maintenance log: {e}")
+        logger.error(f"Submit error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ----------------------------
+# FETCH ALL LOGS (Sheets only)
+# ----------------------------
 @api_router.get("/maintenance/logs")
-async def get_maintenance_logs(
-    vehicle: Optional[str] = None,
-    user: UserInfo = Depends(verify_clerk_token)
-):
-    """Get all maintenance logs with optional vehicle filter"""
+async def get_logs(vehicle: Optional[str] = None, user: UserInfo = Depends(verify_clerk_token)):
+    if not GOOGLE_APPS_SCRIPT_URL:
+        raise HTTPException(500, "GOOGLE_APPS_SCRIPT_URL missing")
+
     try:
-        query = {}
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.get(f"{GOOGLE_APPS_SCRIPT_URL}?action=fetch", follow_redirects=True)
+
+        data = json.loads(resp.text.strip())
+        logs = data.get("logs", [])
+
         if vehicle:
-            query["vehicle_number"] = {"$regex": vehicle, "$options": "i"}
-        
-        logs = await db.maintenance_logs.find(query, {"_id": 0}).sort("timestamp", -1).to_list(1000)
-        
-        # Transform data for response
-        result = []
-        for log in logs:
-            result.append({
-                "record_id": log.get("record_id"),
-                "timestamp": log.get("timestamp"),
-                "vehicle_number": log.get("vehicle_number"),
-                "battery1_number": log.get("battery1_number"),
-                "battery1_photo_link": log.get("battery1_photo_link"),
-                "battery2_number": log.get("battery2_number"),
-                "battery2_photo_link": log.get("battery2_photo_link"),
-                "prime_tyres": log.get("prime_tyres", []),
-                "trailer_tyres": log.get("trailer_tyres", []),
-                "vehicle_images": log.get("vehicle_images", []),
-                "created_by": {
-                    "user_id": log.get("created_by_user_id"),
-                    "email": log.get("created_by_email"),
-                    "name": log.get("created_by_name")
-                },
-                "synced_to_sheets": log.get("synced_to_sheets", False)
-            })
-        
-        return {"logs": result}
-        
-    except Exception as e:
-        logger.error(f"Error fetching maintenance logs: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+            logs = [l for l in logs if vehicle.lower() in l["vehicle_number"].lower()]
 
+        return {"logs": logs}
+
+    except Exception as e:
+        logger.error(f"Fetch logs error: {e}")
+        raise HTTPException(500, str(e))
+
+
+# ----------------------------
+# FETCH A SINGLE LOG
+# ----------------------------
 @api_router.get("/maintenance/logs/{record_id}")
-async def get_maintenance_log(record_id: str, user: UserInfo = Depends(verify_clerk_token)):
-    """Get a specific maintenance log by ID"""
-    try:
-        log = await db.maintenance_logs.find_one({"record_id": record_id}, {"_id": 0})
-        if not log:
-            raise HTTPException(status_code=404, detail="Log not found")
-        
-        return {
-            "record_id": log.get("record_id"),
-            "timestamp": log.get("timestamp"),
-            "vehicle_number": log.get("vehicle_number"),
-            "battery1_number": log.get("battery1_number"),
-            "battery1_photo_link": log.get("battery1_photo_link"),
-            "battery2_number": log.get("battery2_number"),
-            "battery2_photo_link": log.get("battery2_photo_link"),
-            "prime_tyres": log.get("prime_tyres", []),
-            "trailer_tyres": log.get("trailer_tyres", []),
-            "vehicle_images": log.get("vehicle_images", []),
-            "created_by": {
-                "user_id": log.get("created_by_user_id"),
-                "email": log.get("created_by_email"),
-                "name": log.get("created_by_name")
-            }
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching maintenance log: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+async def get_single_log(record_id: str, user: UserInfo = Depends(verify_clerk_token)):
+    if not GOOGLE_APPS_SCRIPT_URL:
+        raise HTTPException(500, "GOOGLE_APPS_SCRIPT_URL missing")
 
-# Include the router in the main app
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.get(f"{GOOGLE_APPS_SCRIPT_URL}?action=fetch", follow_redirects=True)
+
+        logs = json.loads(resp.text.strip()).get("logs", [])
+
+        match = next((l for l in logs if l["record_id"] == record_id), None)
+        if not match:
+            raise HTTPException(404, f"Record {record_id} not found")
+
+        return match
+
+    except Exception as e:
+        logger.error(f"Fetch record error: {e}")
+        raise HTTPException(500, str(e))
+
+
+# Attach router
 app.include_router(api_router)
 
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()

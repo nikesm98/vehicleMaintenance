@@ -5,21 +5,29 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { toast } from 'sonner';
+
 import axios from 'axios';
-import { 
+import { toast } from 'sonner';
+
+import {
   Truck, Battery, CircleDot, Camera, ArrowLeft, LayoutDashboard,
-  Upload, X, CheckCircle2, Loader2, Image as ImageIcon
+  X, CheckCircle2, Loader2, Image as ImageIcon, Check, ChevronsUpDown
 } from 'lucide-react';
+
+// 🔥 Searchable dropdown components
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Command, CommandInput, CommandList, CommandGroup, CommandItem } from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
-// Image upload component
+/* --------------------------------------------
+              IMAGE UPLOADER
+--------------------------------------------- */
 const ImageUploader = ({ label, value, onChange, testId }) => {
   const inputRef = useRef(null);
-  
+
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -28,9 +36,7 @@ const ImageUploader = ({ label, value, onChange, testId }) => {
         return;
       }
       const reader = new FileReader();
-      reader.onloadend = () => {
-        onChange(reader.result);
-      };
+      reader.onloadend = () => onChange(reader.result);
       reader.readAsDataURL(file);
     }
   };
@@ -38,8 +44,10 @@ const ImageUploader = ({ label, value, onChange, testId }) => {
   return (
     <div className="space-y-2">
       <Label className="text-sm font-medium text-slate-700">{label}</Label>
-      <div 
-        className="relative border-2 border-dashed border-slate-200 rounded-xl p-4 hover:border-[#007BC1]/50 transition-colors cursor-pointer bg-slate-50/50"
+
+      <div
+        className="relative border-2 border-dashed border-slate-200 rounded-xl p-4
+                   hover:border-[#007BC1]/50 transition-colors cursor-pointer bg-slate-50/50"
         onClick={() => inputRef.current?.click()}
         data-testid={testId}
       >
@@ -51,6 +59,7 @@ const ImageUploader = ({ label, value, onChange, testId }) => {
           onChange={handleFileChange}
           className="hidden"
         />
+
         {value ? (
           <div className="relative aspect-video rounded-lg overflow-hidden bg-slate-100">
             <img src={value} alt="Preview" className="w-full h-full object-cover" />
@@ -76,46 +85,51 @@ const ImageUploader = ({ label, value, onChange, testId }) => {
   );
 };
 
-// Tyre input component
+/* --------------------------------------------
+              TYRE INPUT
+--------------------------------------------- */
 const TyreInput = ({ position, index, type, value, photo, onNumberChange, onPhotoChange }) => {
   const inputRef = useRef(null);
   const isPrime = type === 'prime';
-  const bgColor = isPrime ? 'bg-amber-50' : 'bg-red-50';
-  const borderColor = isPrime ? 'border-amber-200' : 'border-red-200';
-  const textColor = isPrime ? 'text-amber-700' : 'text-red-700';
-  
+
+  const colorClasses = {
+    bg: isPrime ? 'bg-amber-50' : 'bg-red-50',
+    border: isPrime ? 'border-amber-200' : 'border-red-200',
+    text: isPrime ? 'text-amber-700' : 'text-red-700'
+  };
+
   const handleFileChange = (e) => {
     const file = e.target.files[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('Image size should be less than 5MB');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        onPhotoChange(reader.result);
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image must be less than 5MB");
+      return;
     }
+
+    const reader = new FileReader();
+    reader.onloadend = () => onPhotoChange(reader.result);
+    reader.readAsDataURL(file);
   };
 
   return (
-    <div className={`p-4 rounded-xl ${bgColor} border ${borderColor}`}>
+    <div className={`p-4 rounded-xl ${colorClasses.bg} border ${colorClasses.border}`}>
       <div className="flex items-center gap-2 mb-3">
-        <CircleDot className={`w-5 h-5 ${textColor}`} />
-        <span className={`font-medium ${textColor}`}>{position}</span>
+        <CircleDot className={`w-5 h-5 ${colorClasses.text}`} />
+        <span className={`font-medium ${colorClasses.text}`}>{position}</span>
       </div>
+
       <Input
         placeholder="Tyre Number"
         value={value}
         onChange={(e) => onNumberChange(e.target.value)}
         className="mb-3 bg-white"
-        data-testid={`${type}-tyre-${index}-number`}
       />
-      <div 
-        className="relative border-2 border-dashed border-slate-300 rounded-lg p-2 hover:border-[#007BC1]/50 transition-colors cursor-pointer bg-white"
+
+      <div
+        className="relative border-2 border-dashed border-slate-300 rounded-lg p-2
+                   hover:border-[#007BC1]/50 transition-colors cursor-pointer bg-white"
         onClick={() => inputRef.current?.click()}
-        data-testid={`${type}-tyre-${index}-photo`}
       >
         <input
           ref={inputRef}
@@ -125,6 +139,7 @@ const TyreInput = ({ position, index, type, value, photo, onNumberChange, onPhot
           onChange={handleFileChange}
           className="hidden"
         />
+
         {photo ? (
           <div className="relative aspect-square rounded-lg overflow-hidden">
             <img src={photo} alt="Tyre" className="w-full h-full object-cover" />
@@ -149,42 +164,44 @@ const TyreInput = ({ position, index, type, value, photo, onNumberChange, onPhot
   );
 };
 
+/* --------------------------------------------
+           MAIN COMPONENT
+--------------------------------------------- */
 const MaintenanceForm = () => {
   const navigate = useNavigate();
   const { getToken } = useAuth();
-  const { user } = useUser();
+
   const [loading, setLoading] = useState(false);
   const [vehicles, setVehicles] = useState([]);
-  
-  // Form state
-  const [vehicleNumber, setVehicleNumber] = useState('');
-  const [battery1Number, setBattery1Number] = useState('');
+
+  const [vehicleNumber, setVehicleNumber] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const [battery1Number, setBattery1Number] = useState("");
   const [battery1Photo, setBattery1Photo] = useState(null);
-  const [battery2Number, setBattery2Number] = useState('');
+  const [battery2Number, setBattery2Number] = useState("");
   const [battery2Photo, setBattery2Photo] = useState(null);
-  
-  // Prime tyres (6)
+
+  const [odometerReading, setOdometerReading] = useState("");
+  const [odometerPhoto, setOdometerPhoto] = useState(null);
+
+  // Tyres
   const primePositions = ['Front Left', 'Front Right', 'Rear Left Outer', 'Rear Left Inner', 'Rear Right Inner', 'Rear Right Outer'];
-  const [primeTyres, setPrimeTyres] = useState(
-    primePositions.map(pos => ({ position: pos, number: '', photo: null }))
-  );
-  
-  // Trailer tyres (12)
   const trailerPositions = [
     'Axle 1 Left Outer', 'Axle 1 Left Inner', 'Axle 1 Right Inner', 'Axle 1 Right Outer',
     'Axle 2 Left Outer', 'Axle 2 Left Inner', 'Axle 2 Right Inner', 'Axle 2 Right Outer',
     'Axle 3 Left Outer', 'Axle 3 Left Inner', 'Axle 3 Right Inner', 'Axle 3 Right Outer'
   ];
-  const [trailerTyres, setTrailerTyres] = useState(
-    trailerPositions.map(pos => ({ position: pos, number: '', photo: null }))
-  );
-  
-  // Vehicle images
-  const vehicleImagePositions = ['Front', 'Left', 'Right', 'Rear'];
-  const [vehicleImages, setVehicleImages] = useState(
-    vehicleImagePositions.map(pos => ({ position: pos, photo: null }))
-  );
 
+  const [primeTyres, setPrimeTyres] = useState(primePositions.map(pos => ({ position: pos, number: '', photo: null })));
+  const [trailerTyres, setTrailerTyres] = useState(trailerPositions.map(pos => ({ position: pos, number: '', photo: null })));
+
+  const vehicleImagePositions = ['Front', 'Left', 'Right', 'Rear'];
+  const [vehicleImages, setVehicleImages] = useState(vehicleImagePositions.map(pos => ({ position: pos, photo: null })));
+
+  /* ----------------------------
+      Fetch Vehicles
+  ---------------------------- */
   useEffect(() => {
     fetchVehicles();
   }, []);
@@ -193,28 +210,31 @@ const MaintenanceForm = () => {
     try {
       const response = await axios.get(`${API}/vehicles`);
       setVehicles(response.data.vehicles || []);
-    } catch (error) {
-      console.error('Error fetching vehicles:', error);
-      toast.error('Failed to load vehicles');
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to load vehicle list");
     }
   };
 
+  /* ----------------------------
+        Submit Handler
+  ---------------------------- */
   const handleSubmit = async () => {
-    if (!vehicleNumber) {
-      toast.error('Please select a vehicle number');
-      return;
-    }
+    if (!vehicleNumber) return toast.error("Please select a vehicle");
 
     setLoading(true);
+
     try {
       const token = await getToken({ template: "fleet_token" });
-      
+
       const payload = {
         vehicle_number: vehicleNumber,
         battery1_number: battery1Number,
         battery1_photo_base64: battery1Photo,
         battery2_number: battery2Number,
         battery2_photo_base64: battery2Photo,
+        odometer_value: odometerReading,
+        odometer_photo_base64: odometerPhoto,
         prime_tyres: primeTyres.map(t => ({
           position: t.position,
           number: t.number,
@@ -231,255 +251,327 @@ const MaintenanceForm = () => {
         }))
       };
 
-      const response = await axios.post(`${API}/maintenance/submit`, payload, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+      const res = await axios.post(`${API}/maintenance/submit`, payload, {
+        headers: { Authorization: `Bearer ${token}` }
       });
 
-      if (response.data.success) {
-        toast.success('Maintenance log submitted successfully!');
-        navigate('/dashboard');
+      if (res.data.success) {
+        toast.success("Maintenance log submitted!");
+        navigate("/dashboard");
       }
-    } catch (error) {
-      console.error('Error submitting form:', error);
-      toast.error(error.response?.data?.detail || 'Failed to submit maintenance log');
-    } finally {
-      setLoading(false);
+
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to submit");
     }
+
+    setLoading(false);
   };
 
-  const updatePrimeTyre = (index, field, value) => {
-    setPrimeTyres(prev => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], [field]: value };
-      return updated;
-    });
-  };
-
-  const updateTrailerTyre = (index, field, value) => {
-    setTrailerTyres(prev => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], [field]: value };
-      return updated;
-    });
-  };
-
-  const updateVehicleImage = (index, photo) => {
-    setVehicleImages(prev => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], photo };
-      return updated;
-    });
-  };
-
+  /* --------------------------------------------
+                RETURN JSX
+  --------------------------------------------- */
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Header */}
+      
+      {/* HEADER */}
       <header className="border-b border-slate-200 bg-white sticky top-0 z-50">
         <div className="container mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+
           <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate('/')}
-              className="text-slate-600"
-              data-testid="back-button"
-            >
+            <Button variant="ghost" size="icon" onClick={() => navigate('/')}>
               <ArrowLeft className="w-5 h-5" />
             </Button>
+
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-[#007BC1] flex items-center justify-center">
                 <Truck className="w-6 h-6 text-white" />
               </div>
+
               <div>
-                <h1 className="text-lg font-bold text-[#204788]" style={{ fontFamily: 'Space Grotesk' }}>New Inspection</h1>
+                <h1 className="text-lg font-bold text-[#204788]">New Inspection</h1>
                 <p className="text-xs text-slate-500">Vehicle Maintenance Form</p>
               </div>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/dashboard')}
-              className="hidden sm:flex"
-              data-testid="dashboard-link"
-            >
+            <Button variant="outline" size="sm" onClick={() => navigate("/dashboard")} className="hidden sm:flex">
               <LayoutDashboard className="w-4 h-4 mr-2" />
               Dashboard
             </Button>
             <UserButton afterSignOutUrl="/" />
           </div>
+
         </div>
       </header>
 
-      {/* Form Content */}
+      {/* FORM BODY */}
       <main className="container mx-auto px-4 sm:px-6 py-8 max-w-5xl">
-        {/* Vehicle Selection */}
+
+        {/* ----------------------------- */}
+        {/* VEHICLE SELECTION */}
+        {/* ----------------------------- */}
         <Card className="mb-6 border-slate-200">
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-3 text-[#204788]" style={{ fontFamily: 'Space Grotesk' }}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-3 text-[#204788]">
               <div className="w-10 h-10 rounded-xl bg-[#007BC1]/10 flex items-center justify-center">
                 <Truck className="w-5 h-5 text-[#007BC1]" />
               </div>
               Vehicle Selection
             </CardTitle>
           </CardHeader>
+
           <CardContent>
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-slate-700">Vehicle Number *</Label>
-              <Select value={vehicleNumber} onValueChange={setVehicleNumber}>
-                <SelectTrigger className="w-full" data-testid="vehicle-select">
-                  <SelectValue placeholder="Select vehicle number" />
-                </SelectTrigger>
-                <SelectContent>
-                  {vehicles.map((vehicle) => (
-                    <SelectItem key={vehicle} value={vehicle}>
-                      {vehicle}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <Label className="text-sm font-medium text-slate-700">Vehicle Number *</Label>
+
+            {/* 🔥 SEARCHABLE DROPDOWN HERE */}
+            <Popover open={open} onOpenChange={setOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  className="w-full justify-between mt-2"
+                >
+                  {vehicleNumber || "Select vehicle number"}
+                  <ChevronsUpDown className="w-4 h-4 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+
+              {/* ⭐ Full-width, aligned dropdown */}
+              <PopoverContent
+                align="start"
+                className="w-[var(--radix-popover-trigger-width)] p-0"
+              >
+                <Command>
+
+                  {/* ⭐ API search trigger */}
+                  <CommandInput
+                    placeholder="Search vehicle…"
+                    onValueChange={(value) => fetchVehicles(value)}
+                  />
+
+                  <CommandList>
+                    <CommandGroup heading="Vehicle Numbers">
+                      {vehicles.map((v) => (
+                        <CommandItem
+                          key={v}
+                          value={v}
+                          onSelect={() => {
+                            setVehicleNumber(v);
+                            setOpen(false);
+                          }}
+                        >
+                          <Check
+                            className={cn(
+                              "w-4 h-4 mr-2",
+                              v === vehicleNumber ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          {v}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+
+                </Command>
+              </PopoverContent>
+            </Popover>
+
           </CardContent>
         </Card>
 
-        {/* Battery Section */}
+        {/* -------------------------------- */}
+        {/* BATTERY, TYRES & IMAGE COMPONENTS */}
+        {/* -------------------------------- */}
+
+        {/* BATTERY SECTION */}
         <Card className="mb-6 border-slate-200">
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-3 text-[#204788]" style={{ fontFamily: 'Space Grotesk' }}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-3 text-[#204788]">
               <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
                 <Battery className="w-5 h-5 text-green-600" />
               </div>
               Battery Information
             </CardTitle>
           </CardHeader>
+
           <CardContent>
             <div className="grid md:grid-cols-2 gap-6">
+
               {/* Battery 1 */}
               <div className="space-y-4 p-4 bg-slate-50 rounded-xl">
                 <h4 className="font-medium text-slate-700">Battery 1</h4>
-                <div className="space-y-2">
-                  <Label className="text-sm text-slate-600">Battery Number</Label>
-                  <Input
-                    placeholder="Enter battery number"
-                    value={battery1Number}
-                    onChange={(e) => setBattery1Number(e.target.value)}
-                    data-testid="battery1-number"
-                  />
-                </div>
+
+                <Label className="text-sm text-slate-600">Battery Number</Label>
+                <Input
+                  placeholder="Enter battery number"
+                  value={battery1Number}
+                  onChange={(e) => setBattery1Number(e.target.value)}
+                />
+
                 <ImageUploader
                   label="Battery Photo"
                   value={battery1Photo}
                   onChange={setBattery1Photo}
-                  testId="battery1-photo"
                 />
               </div>
 
               {/* Battery 2 */}
               <div className="space-y-4 p-4 bg-slate-50 rounded-xl">
                 <h4 className="font-medium text-slate-700">Battery 2</h4>
-                <div className="space-y-2">
-                  <Label className="text-sm text-slate-600">Battery Number</Label>
-                  <Input
-                    placeholder="Enter battery number"
-                    value={battery2Number}
-                    onChange={(e) => setBattery2Number(e.target.value)}
-                    data-testid="battery2-number"
-                  />
-                </div>
+
+                <Label className="text-sm text-slate-600">Battery Number</Label>
+                <Input
+                  placeholder="Enter battery number"
+                  value={battery2Number}
+                  onChange={(e) => setBattery2Number(e.target.value)}
+                />
+
                 <ImageUploader
                   label="Battery Photo"
                   value={battery2Photo}
                   onChange={setBattery2Photo}
-                  testId="battery2-photo"
                 />
               </div>
+
             </div>
           </CardContent>
         </Card>
 
-        {/* Prime Tyres Section */}
+        {/* ODOMETER SECTION */}
         <Card className="mb-6 border-slate-200">
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-3 text-[#204788]" style={{ fontFamily: 'Space Grotesk' }}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-3 text-[#204788]">
+              <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
+                <CircleDot className="w-5 h-5 text-purple-600" />
+              </div>
+              Odometer Reading
+            </CardTitle>
+          </CardHeader>
+
+          <CardContent>
+            <div className="grid md:grid-cols-2 gap-6">
+
+              {/* Odometer Input */}
+              <div className="space-y-4 p-4 bg-slate-50 rounded-xl">
+                <Label className="text-sm text-slate-600">Odometer Value</Label>
+                <Input
+                  placeholder="Enter odometer reading"
+                  value={odometerReading}
+                  onChange={(e) => setOdometerReading(e.target.value)}
+                />
+
+                <ImageUploader
+                  label="Odometer Photo"
+                  value={odometerPhoto}
+                  onChange={setOdometerPhoto}
+                />
+              </div>
+
+            </div>
+          </CardContent>
+        </Card>
+
+
+        {/* PRIME TYRES */}
+        <Card className="mb-6 border-slate-200">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-3 text-[#204788]">
               <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
                 <CircleDot className="w-5 h-5 text-amber-600" />
               </div>
               Prime Tyres (6)
-              <span className="text-xs font-normal text-slate-500 bg-amber-100 px-2 py-1 rounded-full">Main Vehicle</span>
             </CardTitle>
           </CardHeader>
+
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {primeTyres.map((tyre, index) => (
+              {primeTyres.map((tyre, i) => (
                 <TyreInput
-                  key={index}
+                  key={i}
                   position={tyre.position}
-                  index={index}
+                  index={i}
                   type="prime"
                   value={tyre.number}
                   photo={tyre.photo}
-                  onNumberChange={(val) => updatePrimeTyre(index, 'number', val)}
-                  onPhotoChange={(photo) => updatePrimeTyre(index, 'photo', photo)}
+                  onNumberChange={(val) => {
+                    const upd = [...primeTyres];
+                    upd[i].number = val;
+                    setPrimeTyres(upd);
+                  }}
+                  onPhotoChange={(photo) => {
+                    const upd = [...primeTyres];
+                    upd[i].photo = photo;
+                    setPrimeTyres(upd);
+                  }}
                 />
               ))}
             </div>
           </CardContent>
         </Card>
 
-        {/* Trailer Tyres Section */}
+        {/* TRAILER TYRES */}
         <Card className="mb-6 border-slate-200">
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-3 text-[#204788]" style={{ fontFamily: 'Space Grotesk' }}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-3 text-[#204788]">
               <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
                 <CircleDot className="w-5 h-5 text-red-600" />
               </div>
               Trailer Tyres (12)
-              <span className="text-xs font-normal text-slate-500 bg-red-100 px-2 py-1 rounded-full">Trailer</span>
             </CardTitle>
           </CardHeader>
+
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {trailerTyres.map((tyre, index) => (
+              {trailerTyres.map((tyre, i) => (
                 <TyreInput
-                  key={index}
+                  key={i}
                   position={tyre.position}
-                  index={index}
+                  index={i}
                   type="trailer"
                   value={tyre.number}
                   photo={tyre.photo}
-                  onNumberChange={(val) => updateTrailerTyre(index, 'number', val)}
-                  onPhotoChange={(photo) => updateTrailerTyre(index, 'photo', photo)}
+                  onNumberChange={(val) => {
+                    const upd = [...trailerTyres];
+                    upd[i].number = val;
+                    setTrailerTyres(upd);
+                  }}
+                  onPhotoChange={(photo) => {
+                    const upd = [...trailerTyres];
+                    upd[i].photo = photo;
+                    setTrailerTyres(upd);
+                  }}
                 />
               ))}
             </div>
           </CardContent>
         </Card>
 
-        {/* Vehicle Images Section */}
+        {/* VEHICLE IMAGES */}
         <Card className="mb-6 border-slate-200">
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-3 text-[#204788]" style={{ fontFamily: 'Space Grotesk' }}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-3 text-[#204788]">
               <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
                 <ImageIcon className="w-5 h-5 text-blue-600" />
               </div>
               Vehicle Images
             </CardTitle>
           </CardHeader>
+
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {vehicleImages.map((img, index) => (
-                <div key={index} className="space-y-2">
+              {vehicleImages.map((img, i) => (
+                <div key={i} className="space-y-2">
                   <Label className="text-sm font-medium text-slate-700">{img.position} View</Label>
                   <ImageUploader
                     label=""
                     value={img.photo}
-                    onChange={(photo) => updateVehicleImage(index, photo)}
-                    testId={`vehicle-image-${img.position.toLowerCase()}`}
+                    onChange={(photo) => {
+                      const upd = [...vehicleImages];
+                      upd[i].photo = photo;
+                      setVehicleImages(upd);
+                    }}
                   />
                 </div>
               ))}
@@ -487,21 +579,14 @@ const MaintenanceForm = () => {
           </CardContent>
         </Card>
 
-        {/* Submit Button */}
+        {/* SUBMIT BUTTON */}
         <div className="flex justify-end gap-4 pb-8">
-          <Button
-            variant="outline"
-            onClick={() => navigate('/')}
-            disabled={loading}
-            data-testid="cancel-button"
-          >
-            Cancel
-          </Button>
+          <Button variant="outline" onClick={() => navigate("/")}>Cancel</Button>
+
           <Button
             onClick={handleSubmit}
             disabled={loading || !vehicleNumber}
-            className="bg-[#007BC1] hover:bg-[#006299] text-white px-8"
-            data-testid="submit-button"
+            className="bg-[#007BC1] text-white px-8"
           >
             {loading ? (
               <>
