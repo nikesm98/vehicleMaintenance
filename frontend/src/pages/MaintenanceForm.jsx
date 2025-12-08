@@ -451,10 +451,10 @@ const MaintenanceForm = () => {
           </CardHeader>
 
           <CardContent>
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="w-full">  
 
               {/* Odometer Input */}
-              <div className="space-y-4 p-4 bg-slate-50 rounded-xl">
+              <div className="space-y-4 p-4 bg-slate-50 rounded-xl w-full">
                 <Label className="text-sm text-slate-600">Odometer Value</Label>
                 <Input
                   placeholder="Enter odometer reading"
