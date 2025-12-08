@@ -73,7 +73,7 @@ const HomePage = () => {
           </div>
 
           {/* Title */}
-          <h1 
+          <h1
             className="text-5xl sm:text-6xl lg:text-7xl font-bold text-[#204788]"
             style={{ fontFamily: 'Space Grotesk', lineHeight: 1.1 }}
           >
@@ -83,14 +83,14 @@ const HomePage = () => {
 
           {/* Subtitle */}
           <p className="text-lg text-slate-600 max-w-2xl mx-auto leading-relaxed">
-            Streamline your vehicle inspections with digital forms, photo documentation, 
+            Streamline your vehicle inspections with digital forms, photo documentation,
             and real-time reporting. Keep your fleet running smoothly.
           </p>
 
           {/* CTA Buttons */}
           <SignedIn>
             <div className="flex flex-col sm:flex-row gap-5 justify-center pt-4 pb-8">
-              <Button 
+              <Button
                 onClick={() => navigate('/maintenance')}
                 className="bg-[#007BC1] hover:bg-[#006299] text-white px-10 py-6 text-lg rounded-xl shadow-md"
               >
@@ -98,7 +98,7 @@ const HomePage = () => {
                 New Inspection
               </Button>
 
-              <Button 
+              <Button
                 onClick={() => navigate('/dashboard')}
                 variant="outline"
                 className="border-[#204788] text-[#204788] hover:bg-[#204788]/5 px-10 py-6 text-lg rounded-xl"
@@ -124,8 +124,8 @@ const HomePage = () => {
       <section className="container mx-auto px-6 py-24">
         <div className="grid md:grid-cols-3 gap-10">
           {features.map((feature, index) => (
-            <Card 
-              key={index} 
+            <Card
+              key={index}
               className="bg-white border-slate-200 hover:border-[#007BC1]/40 transition-all duration-300 hover:shadow-xl rounded-2xl"
             >
               <CardContent className="p-10">
@@ -146,10 +146,10 @@ const HomePage = () => {
       <section className="container mx-auto px-6 py-24">
         <Card className="bg-[#204788] border-0 shadow-xl rounded-3xl mt-10">
           <CardContent className="p-14">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-14">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-14">
               {[
                 { value: '65+', label: 'Vehicles Tracked' },
-                { value: '1000+', label: 'Inspections Done' },
+                // { value: '100+', label: 'Inspections Done' },
                 { value: '99.9%', label: 'Uptime' },
                 { value: '24/7', label: 'Cloud Backup' }
               ].map((stat, index) => (
