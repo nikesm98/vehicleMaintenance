@@ -1,225 +1,303 @@
-/**
- * CJ Darcl Fleet Maintenance - Google Apps Script
- * 
- * This script handles:
- * 1. Receiving maintenance data from the backend
- * 2. Uploading images to Google Drive
- * 3. Appending data to Google Sheets
- * 
- * SETUP INSTRUCTIONS:
- * 1. Create a new Google Apps Script project at script.google.com
- * 2. Copy this entire code into the script editor
- * 3. Create a Google Sheet and note its ID from the URL
- * 4. Create a Google Drive folder for images and note its ID
- * 5. Update SHEET_ID and DRIVE_FOLDER_ID below
- * 6. Deploy as Web App:
- *    - Click Deploy > New Deployment
- *    - Select type: Web App
- *    - Execute as: Me
- *    - Who has access: Anyone
- * 7. Copy the Web App URL and add it to your backend .env as GOOGLE_APPS_SCRIPT_URL
- */
+/********************************************************************
+ * CJ DARCL – GOOGLE SHEETS + DRIVE UPLOAD SCRIPT (FULLY FIXED)
+ ********************************************************************/
 
-// Configuration - UPDATE THESE VALUES
-const SHEET_ID = 'YOUR_GOOGLE_SHEET_ID_HERE';  // Get from sheet URL
-const DRIVE_FOLDER_ID = 'YOUR_GOOGLE_DRIVE_FOLDER_ID_HERE';  // Get from folder URL
-const SHEET_NAME = 'MaintenanceLogs';  // Sheet tab name
+const SHEET_NAME = "Maintenance Logs Trial";
+const FOLDER_NAME = "Fleet Maintenance Images";
 
-/**
- * Handle POST requests from the backend
- */
-function doPost(e) {
+/************************************************************
+ * GET HANDLER (FETCH LOGS)
+ ************************************************************/
+function doGet(e) {
   try {
-    const data = JSON.parse(e.postData.contents);
-    
-    if (data.action === 'submit') {
-      return handleSubmission(data.data);
+    if (e.parameter.action !== "fetch") {
+      return json({ success: false, error: "Invalid action" });
     }
-    
-    return createResponse(false, 'Unknown action');
-  } catch (error) {
-    return createResponse(false, error.toString());
+
+    const sheet = getOrCreateSheet(SHEET_NAME);
+    const rows = sheet.getDataRange().getValues();
+    const logs = [];
+
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+
+      logs.push({
+        record_id: row[0],
+        timestamp: row[1],
+        vehicle_number: row[2],
+
+        battery1_number: row[3],
+        battery1_photo_link: row[4],
+
+        battery2_number: row[5],
+        battery2_photo_link: row[6],
+
+        odometer_value: row[7],
+        odometer_photo_link: row[8],
+
+        prime_tyres: parseTyreReadable(row[9]),
+        prime_tyre_links: parseTyreLinks(row[10]),
+
+        trailer_tyres: parseTyreReadable(row[11]),
+        trailer_tyre_links: parseTyreLinks(row[12]),
+
+        vehicle_images: parseVehicleReadable(row[13]),
+        vehicle_image_links: parseVehicleLinks(row[14]),
+
+        created_by: {
+          user_id: row[15],
+          email: row[16],
+          name: row[17]
+        },
+
+        synced_to_sheets: true
+      });
+    }
+
+    return json({ logs });
+
+  } catch (err) {
+    return json({ success: false, error: err.toString() });
   }
 }
 
-/**
- * Handle GET requests (for testing)
- */
-function doGet(e) {
-  return ContentService.createTextOutput(JSON.stringify({
-    success: true,
-    message: 'CJ Darcl Fleet Maintenance Apps Script is running'
-  })).setMimeType(ContentService.MimeType.JSON);
+/************************************************************
+ * POST HANDLER
+ ************************************************************/
+function doPost(e) {
+  try {
+    const body = JSON.parse(e.postData.contents || "{}");
+
+    if (!body.action)
+      return json({ success: false, error: "Missing action" });
+
+    if (body.action === "setup") return setup();
+    if (body.action === "submit") return submitMaintenance(body.data);
+
+    return json({ success: false, error: "Unknown action" });
+
+  } catch (err) {
+    return json({ success: false, error: err.toString() });
+  }
 }
 
-/**
- * Handle maintenance submission
- */
-function handleSubmission(data) {
+/************************************************************
+ * SETUP FUNCTION
+ ************************************************************/
+function setup() {
+  const sheet = getOrCreateSheet(SHEET_NAME, [
+    "Record ID",                 // 0
+    "Timestamp",                 // 1
+    "Vehicle Number",            // 2
+    "Battery1 Number",           // 3
+    "Battery1 Image Link",       // 4
+    "Battery2 Number",           // 5
+    "Battery2 Image Link",       // 6
+    "Odometer Value",            // ⭐ 7 NEW
+    "Odometer Image Link",       // ⭐ 8 NEW
+    "Prime Tyres (Readable)",    // 9
+    "Prime Tyre Links",          // 10
+    "Trailer Tyres (Readable)",  // 11
+    "Trailer Tyre Links",        // 12
+    "Vehicle Images (Readable)", // 13
+    "Vehicle Image Links",       // 14
+    "CreatedBy_userId",          // 15
+    "CreatedBy_email",           // 16
+    "CreatedBy_name"             // 17
+  ]);
+
+  const folder = getOrCreateFolder(FOLDER_NAME);
+
+  return json({
+    success: true,
+    sheet_url: sheet.getParent().getUrl(),
+    folder_url: folder.getUrl()
+  });
+}
+
+/************************************************************
+ * SUBMIT MAINTENANCE ENTRY
+ ************************************************************/
+function submitMaintenance(data) {
   try {
-    const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-    const vehicleFolder = getOrCreateFolder(folder, data.vehicle_number);
-    const dateFolder = getOrCreateFolder(vehicleFolder, formatDate(new Date()));
-    
-    // Upload images and get links
-    let battery1PhotoLink = null;
-    let battery2PhotoLink = null;
-    const primeTyreLinks = [];
-    const trailerTyreLinks = [];
-    const vehicleImageLinks = [];
-    
-    // Battery photos
-    if (data.battery1_photo_base64) {
-      battery1PhotoLink = uploadImage(dateFolder, 'battery1', data.battery1_photo_base64);
-    }
-    if (data.battery2_photo_base64) {
-      battery2PhotoLink = uploadImage(dateFolder, 'battery2', data.battery2_photo_base64);
-    }
-    
-    // Prime tyre photos
-    if (data.prime_tyres) {
-      data.prime_tyres.forEach((tyre, index) => {
-        if (tyre.photo_base64) {
-          const link = uploadImage(dateFolder, `prime_tyre_${index + 1}_${tyre.position.replace(/\s+/g, '_')}`, tyre.photo_base64);
-          primeTyreLinks.push(link);
-        } else {
-          primeTyreLinks.push(null);
-        }
-      });
-    }
-    
-    // Trailer tyre photos
-    if (data.trailer_tyres) {
-      data.trailer_tyres.forEach((tyre, index) => {
-        if (tyre.photo_base64) {
-          const link = uploadImage(dateFolder, `trailer_tyre_${index + 1}_${tyre.position.replace(/\s+/g, '_')}`, tyre.photo_base64);
-          trailerTyreLinks.push(link);
-        } else {
-          trailerTyreLinks.push(null);
-        }
-      });
-    }
-    
-    // Vehicle images
-    if (data.vehicle_images) {
-      data.vehicle_images.forEach((img, index) => {
-        if (img.photo_base64) {
-          const link = uploadImage(dateFolder, `vehicle_${img.position}`, img.photo_base64);
-          vehicleImageLinks.push(link);
-        } else {
-          vehicleImageLinks.push(null);
-        }
-      });
-    }
-    
-    // Prepare sheet data
-    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME) || 
-                  SpreadsheetApp.openById(SHEET_ID).insertSheet(SHEET_NAME);
-    
-    // Check if header exists, if not create it
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow([
-        'Record ID',
-        'Timestamp',
-        'Vehicle Number',
-        'Battery1 Number',
-        'Battery1 Image Link',
-        'Battery2 Number',
-        'Battery2 Image Link',
-        'Tyres JSON',
-        'Tyre Image Links JSON',
-        'Vehicle Image Links JSON',
-        'CreatedBy_userId',
-        'CreatedBy_email',
-        'CreatedBy_name'
-      ]);
-    }
-    
-    // Prepare tyres data
-    const tyresJson = JSON.stringify({
-      prime: data.prime_tyres ? data.prime_tyres.map(t => ({ position: t.position, number: t.number })) : [],
-      trailer: data.trailer_tyres ? data.trailer_tyres.map(t => ({ position: t.position, number: t.number })) : []
+    const sheet = getOrCreateSheet(SHEET_NAME);
+    const folder = getOrCreateFolder(FOLDER_NAME);
+
+    /******** Battery Images ********/
+    const battery1Link = data.battery1_photo_base64
+      ? saveImage(folder, `battery1_${data.vehicle_number}`, data.battery1_photo_base64)
+      : "";
+
+    const battery2Link = data.battery2_photo_base64
+      ? saveImage(folder, `battery2_${data.vehicle_number}`, data.battery2_photo_base64)
+      : "";
+
+    /******** Odometer ********/
+    const odometerLink = data.odometer_photo_base64
+      ? saveImage(folder, `odometer_${data.vehicle_number}`, data.odometer_photo_base64)
+      : "";
+
+    /******** Prime Tyres ********/
+    const primeReadable = [];
+    const primeLinks = [];
+
+    (data.prime_tyres || []).forEach(t => {
+      primeReadable.push(`${t.position}: ${t.number}`);
+      primeLinks.push(
+        t.photo_base64
+          ? `${t.position}: ` + saveImage(folder, `prime_${t.position}`, t.photo_base64)
+          : `${t.position}: (no photo)`
+      );
     });
-    
-    const tyreLinksJson = JSON.stringify({
-      prime: primeTyreLinks,
-      trailer: trailerTyreLinks
+
+    /******** Trailer Tyres ********/
+    const trailerReadable = [];
+    const trailerLinks = [];
+
+    (data.trailer_tyres || []).forEach(t => {
+      trailerReadable.push(`${t.position}: ${t.number}`);
+      trailerLinks.push(
+        t.photo_base64
+          ? `${t.position}: ` + saveImage(folder, `trailer_${t.position}`, t.photo_base64)
+          : `${t.position}: (no photo)`
+      );
     });
-    
-    const vehicleLinksJson = JSON.stringify(vehicleImageLinks);
-    
-    // Append row
+
+    /******** Vehicle Images ********/
+    const vehicleReadable = [];
+    const vehicleLinks = [];
+
+    (data.vehicle_images || []).forEach(v => {
+      vehicleReadable.push(v.position);
+      vehicleLinks.push(
+        v.photo_base64
+          ? `${v.position}: ` + saveImage(folder, `vehicle_${v.position}`, v.photo_base64)
+          : `${v.position}: (no photo)`
+      );
+    });
+
+    /******** Write row ********/
     sheet.appendRow([
       data.record_id,
       data.timestamp,
       data.vehicle_number,
-      data.battery1_number || '',
-      battery1PhotoLink || '',
-      data.battery2_number || '',
-      battery2PhotoLink || '',
-      tyresJson,
-      tyreLinksJson,
-      vehicleLinksJson,
-      data.created_by_user_id || '',
-      data.created_by_email || '',
-      data.created_by_name || ''
+
+      data.battery1_number,
+      battery1Link,
+
+      data.battery2_number,
+      battery2Link,
+
+      data.odometer_value,
+      odometerLink,
+
+      primeReadable.join("\n"),
+      primeLinks.join("\n"),
+
+      trailerReadable.join("\n"),
+      trailerLinks.join("\n"),
+
+      vehicleReadable.join("\n"),
+      vehicleLinks.join("\n"),
+
+      data.created_by_user_id,
+      data.created_by_email,
+      data.created_by_name
     ]);
-    
-    return createResponse(true, 'Data saved successfully', {
-      battery1_photo_link: battery1PhotoLink,
-      battery2_photo_link: battery2PhotoLink,
-      prime_tyre_links: primeTyreLinks,
-      trailer_tyre_links: trailerTyreLinks,
-      vehicle_image_links: vehicleImageLinks
+
+    return json({
+      success: true,
+      battery1_photo_link: battery1Link,
+      battery2_photo_link: battery2Link,
+      odometer_photo_link: odometerLink,
+      prime_tyre_links: primeLinks,
+      trailer_tyre_links: trailerLinks,
+      vehicle_image_links: vehicleLinks
     });
-    
-  } catch (error) {
-    return createResponse(false, error.toString());
+
+  } catch (err) {
+    return json({ success: false, error: err.toString() });
   }
 }
 
-/**
- * Upload base64 image to Drive
- */
-function uploadImage(folder, name, base64Data) {
-  try {
-    // Remove data URL prefix if present
-    const base64 = base64Data.replace(/^data:image\/\w+;base64,/, '');
-    const blob = Utilities.newBlob(Utilities.base64Decode(base64), 'image/jpeg', `${name}_${Date.now()}.jpg`);
-    const file = folder.createFile(blob);
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    return file.getUrl();
-  } catch (error) {
-    console.error('Error uploading image:', error);
-    return null;
+/************************************************************
+ * PARSERS
+ ************************************************************/
+function parseTyreReadable(str) {
+  if (!str || typeof str !== "string") return [];
+  return str.split("\n").map(line => {
+    const [position, number] = line.split(":").map(s => s.trim());
+    return { position: position || "", number: number || "" };
+  });
+}
+
+function parseTyreLinks(str) {
+  if (!str || typeof str !== "string") return [];
+  return str.split("\n").map(line => {
+    const [position, link] = line.split(": ").map(s => s.trim());
+    return {
+      position: position || "",
+      photo_link: link === "(no photo)" ? "" : (link || "")
+    };
+  });
+}
+
+function parseVehicleReadable(str) {
+  if (!str || typeof str !== "string") return [];
+  return str.split("\n").map(pos => ({ position: pos.trim(), number: "" }));
+}
+
+function parseVehicleLinks(str) {
+  if (!str || typeof str !== "string") return [];
+  return str.split("\n").map(line => {
+    const [position, link] = line.split(": ").map(s => s.trim());
+    return {
+      position: position || "",
+      photo_link: link === "(no photo)" ? "" : (link || "")
+    };
+  });
+}
+
+/************************************************************
+ * SAVE IMAGE
+ ************************************************************/
+function saveImage(folder, name, base64) {
+  const cleaned = base64.replace(/^data:image\/\w+;base64,/, "");
+  const bytes = Utilities.base64Decode(cleaned);
+  const blob = Utilities.newBlob(bytes, "image/jpeg", `${name}.jpg`);
+  const file = folder.createFile(blob);
+  return file.getUrl();
+}
+
+/************************************************************
+ * UTIL
+ ************************************************************/
+function json(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function getOrCreateFolder(name) {
+  const folders = DriveApp.getFoldersByName(name);
+  return folders.hasNext() ? folders.next() : DriveApp.createFolder(name);
+}
+
+function getOrCreateSheet(name, headers) {
+  const files = DriveApp.getFilesByName(name);
+
+  if (files.hasNext()) {
+    const ss = SpreadsheetApp.open(files.next());
+    return ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
   }
-}
 
-/**
- * Get or create a folder
- */
-function getOrCreateFolder(parent, name) {
-  const folders = parent.getFoldersByName(name);
-  if (folders.hasNext()) {
-    return folders.next();
+  const ss = SpreadsheetApp.create(name);
+  const sheet = ss.getSheets()[0];
+
+  if (headers) {
+    sheet.appendRow(headers);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
+    sheet.setFrozenRows(1);
   }
-  return parent.createFolder(name);
-}
 
-/**
- * Format date for folder name
- */
-function formatDate(date) {
-  return Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM-dd');
-}
-
-/**
- * Create JSON response
- */
-function createResponse(success, message, data = {}) {
-  return ContentService.createTextOutput(JSON.stringify({
-    success,
-    message,
-    ...data
-  })).setMimeType(ContentService.MimeType.JSON);
+  return sheet;
 }
