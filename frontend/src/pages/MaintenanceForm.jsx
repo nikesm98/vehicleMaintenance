@@ -481,7 +481,7 @@ const MaintenanceForm = () => {
               <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
                 <CircleDot className="w-5 h-5 text-amber-600" />
               </div>
-              Primer Tyres/Horse (6)
+              Primer/Horse Tyres (6)
             </CardTitle>
           </CardHeader>
 
