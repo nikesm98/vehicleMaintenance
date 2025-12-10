@@ -143,73 +143,19 @@ async def verify_clerk_token(authorization: Optional[str] = Header(None)) -> Use
 # ----------------------------
 @api_router.get("/vehicles")
 async def get_vehicles():
-    vehicles = [
-  "HR55AZ3114",
-  "NL01AE4999",
-  "NL01AE4997",
-  "NL01AE4995",
-  "NL01AE4993",
-  "NL01AE4991",
-  "NL01AE4989",
-  "NL01AE4987",
-  "NL01AE4985",
-  "NL01AE4983",
-  "NL01AE4981",
-  "NL01AE4979",
-  "NL01AE4975",
-  "NL01AE4973",
-  "NL01AE4971",
-  "NL01AE4969",
-  "NL01AE4967",
-  "NL01AE4965",
-  "NL01AE4963",
-  "NL01AE4961",
-  "NL01AE4959",
-  "NL01AE4957",
-  "NL01AE4955",
-  "NL01AE4953",
-  "NL01AE4951",
-  "NL01AD6494",
-  "NL01AD4558",
-  "NL01AD4557",
-  "NL01AD4556",
-  "NL01AD4444",
-  "NL01AD4443",
-  "NL01AD4442",
-  "NL01AD4441",
-  "NL01AD4440",
-  "NL01AE4977",
-  "HR55AP7119",
-  "HR55AP1908",
-  "HR55AP5443",
-  "HR55AP3537",
-  "HR55AP9057",
-  "HR55AP1181",
-  "HR55AP6189",
-  "HR55AP8302",
-  "HR55AP3538",
-  "HR55AP2933",
-  "HR55AP9013",
-  "HR55AP4716",
-  "HR55AP6982",
-  "HR55AP1569",
-  "HR55AP7671",
-  "HR55AP3523",
-  "HR55AP0407",
-  "HR55AP0740",
-  "HR55AP7396",
-  "HR55AP1657",
-  "HR55AR2073",
-  "HR55AR1287",
-  "HR55AR4913",
-  "HR55AR3298",
-  "HR55AR2616",
-  "HR55AR1698",
-  "HR55AR4395",
-  "HR55AR4507",
-  "HR55AR2561",
-  "HR55AR7377"
-]
+    vehicles = [ "HR55AZ3114", "NL01AE4999", "NL01AE4997", "NL01AE4995", "NL01AE4993",
+                "NL01AE4991", "NL01AE4989", "NL01AE4987", "NL01AE4985", "NL01AE4983",
+                "NL01AE4981", "NL01AE4979", "NL01AE4975", "NL01AE4973", "NL01AE4971",
+                "NL01AE4969", "NL01AE4967", "NL01AE4965", "NL01AE4963", "NL01AE4961",
+                "NL01AE4959", "NL01AE4957", "NL01AE4955", "NL01AE4953", "NL01AE4951",
+                "NL01AD6494", "NL01AD4558", "NL01AD4557", "NL01AD4556", "NL01AD4444", 
+                "NL01AD4443", "NL01AD4442", "NL01AD4441", "NL01AD4440", "NL01AE4977", 
+                "HR55AP7119", "HR55AP1908", "HR55AP5443", "HR55AP3537", "HR55AP9057",
+                "HR55AP1181", "HR55AP6189", "HR55AP8302", "HR55AP3538", "HR55AP2933",
+                "HR55AP9013", "HR55AP4716", "HR55AP6982", "HR55AP1569", "HR55AP7671",
+                "HR55AP3523", "HR55AP0407", "HR55AP0740", "HR55AP7396", "HR55AP1657",
+                "HR55AR2073", "HR55AR1287", "HR55AR4913", "HR55AR3298", "HR55AR2616",
+                "HR55AR1698", "HR55AR4395", "HR55AR4507", "HR55AR2561", "HR55AR7377"]
     return {"vehicles": vehicles}
 
 
@@ -224,9 +170,6 @@ async def submit_maintenance(
         record_id = str(uuid.uuid4())
         timestamp = datetime.now(timezone.utc).isoformat()
 
-        # ----------------------------
-        # BUILD DATA PACKET FOR SHEETS
-        # ----------------------------
         log_data = {
             "record_id": record_id,
             "timestamp": timestamp,
