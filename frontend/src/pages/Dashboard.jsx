@@ -126,7 +126,7 @@ const Dashboard = () => {
             </Button>
 
             <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-[#007BC1] rounded-xl flex items-center justify-center">
+              <div className="w-9 h-9 bg-[#007BC1] rounded-xl flex items-center justify-center">
                 <Truck className="w-6 h-6 text-white" />
               </div>
 
@@ -151,7 +151,7 @@ const Dashboard = () => {
       <div className="container mx-auto px-4 py-6">
 
         {/* SEARCH */}
-        <div className="flex flex-col sm:flex-row gap-4 justify-between mb-6">
+        <div className="flex flex-col sm:flex-row gap-4 justify-between mb-6 mt-6">
 
           <form onSubmit={handleSearch} className="flex gap-2 w-full sm:w-auto">
             <div className="relative flex-1 sm:w-80">

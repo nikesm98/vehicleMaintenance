@@ -284,7 +284,7 @@ const MaintenanceForm = () => {
             </Button>
 
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[#007BC1] flex items-center justify-center">
+              <div className="w-9 h-9 rounded-xl bg-[#007BC1] flex items-center justify-center">
                 <Truck className="w-6 h-6 text-white" />
               </div>
 
@@ -312,7 +312,7 @@ const MaintenanceForm = () => {
         {/* ----------------------------- */}
         {/* VEHICLE SELECTION */}
         {/* ----------------------------- */}
-        <Card className="mb-6 border-slate-200">
+        <Card className="mb-6 border-slate-200 mt-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-3 text-[#204788]">
               <div className="w-10 h-10 rounded-xl bg-[#007BC1]/10 flex items-center justify-center">
