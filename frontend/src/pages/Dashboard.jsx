@@ -13,7 +13,12 @@ import {
   Calendar, Image as ImageIcon, ExternalLink, Loader2, FileText
 } from 'lucide-react';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+// Validate backend URL
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+if (!process.env.REACT_APP_BACKEND_URL) {
+  console.warn('⚠️ REACT_APP_BACKEND_URL not set! Using default: http://localhost:8001');
+  console.warn('⚠️ Create a .env file in frontend/ with: REACT_APP_BACKEND_URL=your_backend_url');
+}
 const API = `${BACKEND_URL}/api`;
 
 const Dashboard = () => {

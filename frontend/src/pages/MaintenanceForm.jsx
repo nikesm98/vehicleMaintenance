@@ -11,15 +11,21 @@ import { toast } from 'sonner';
 
 import {
   Truck, Battery, CircleDot, Camera, ArrowLeft, LayoutDashboard,
-  X, CheckCircle2, Loader2, Image as ImageIcon, Check, ChevronsUpDown
+  X, CheckCircle2, Loader2, Image as ImageIcon, Check, ChevronsUpDown, RefreshCw
 } from 'lucide-react';
 
 // 🔥 Searchable dropdown components
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandGroup, CommandItem } from "@/components/ui/command";
-import { cn } from "@/lib/utils";
+import { cn, resizeImageFile } from "@/lib/utils";
+import { getCachedVehicles, setCachedVehicles } from "@/lib/vehiclesCache";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+// Validate backend URL
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+if (!process.env.REACT_APP_BACKEND_URL) {
+  console.warn('⚠️ REACT_APP_BACKEND_URL not set! Using default: http://localhost:8001');
+  console.warn('⚠️ Create a .env file in frontend/ with: REACT_APP_BACKEND_URL=your_backend_url');
+}
 const API = `${BACKEND_URL}/api`;
 
 /* --------------------------------------------
@@ -28,16 +34,21 @@ const API = `${BACKEND_URL}/api`;
 const ImageUploader = ({ label, value, onChange, testId }) => {
   const inputRef = useRef(null);
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('Image size should be less than 5MB');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => onChange(reader.result);
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image size should be less than 5MB');
+      return;
+    }
+
+    try {
+      const resized = await resizeImageFile(file);
+      onChange(resized);
+    } catch (err) {
+      console.error("Image resize failed", err);
+      toast.error("Failed to process image");
     }
   };
 
@@ -98,7 +109,7 @@ const TyreInput = ({ position, index, type, value, photo, onNumberChange, onPhot
     text: isPrime ? 'text-amber-700' : 'text-red-700'
   };
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -107,9 +118,13 @@ const TyreInput = ({ position, index, type, value, photo, onNumberChange, onPhot
       return;
     }
 
-    const reader = new FileReader();
-    reader.onloadend = () => onPhotoChange(reader.result);
-    reader.readAsDataURL(file);
+    try {
+      const resized = await resizeImageFile(file);
+      onPhotoChange(resized);
+    } catch (err) {
+      console.error("Tyre image resize failed", err);
+      toast.error("Failed to process image");
+    }
   };
 
   return (
@@ -200,19 +215,39 @@ const MaintenanceForm = () => {
   const [vehicleImages, setVehicleImages] = useState(vehicleImagePositions.map(pos => ({ position: pos, photo: null })));
 
   /* ----------------------------
-      Fetch Vehicles
+      Fetch Vehicles (with caching)
   ---------------------------- */
   useEffect(() => {
     fetchVehicles();
   }, []);
 
-  const fetchVehicles = async () => {
+  const fetchVehicles = async (forceRefresh = false) => {
+    // Check cache first (unless forcing refresh)
+    if (!forceRefresh) {
+      const cached = getCachedVehicles();
+      if (cached && cached.length > 0) {
+        setVehicles(cached);
+        return; // Use cached data, no API call needed
+      }
+    }
+
+    // Fetch from API if no cache or forced refresh
     try {
       const response = await axios.get(`${API}/vehicles`);
-      setVehicles(response.data.vehicles || []);
+      const vehiclesList = response.data.vehicles || [];
+      setVehicles(vehiclesList);
+      // Cache the result
+      setCachedVehicles(vehiclesList);
     } catch (err) {
       console.error(err);
-      toast.error("Failed to load vehicle list");
+      // If API fails but we have cache, use cache as fallback
+      const cached = getCachedVehicles();
+      if (cached) {
+        setVehicles(cached);
+        toast.warning("Using cached vehicle list (API unavailable)");
+      } else {
+        toast.error("Failed to load vehicle list");
+      }
     }
   };
 
@@ -227,28 +262,35 @@ const MaintenanceForm = () => {
     try {
       const token = await getToken({ template: "fleet_token" });
 
+      // Build optimized payload - only include non-empty values
       const payload = {
         vehicle_number: vehicleNumber,
-        battery1_number: battery1Number,
-        battery1_photo_base64: battery1Photo,
-        battery2_number: battery2Number,
-        battery2_photo_base64: battery2Photo,
-        odometer_value: odometerReading,
-        odometer_photo_base64: odometerPhoto,
-        prime_tyres: primeTyres.map(t => ({
-          position: t.position,
-          number: t.number,
-          photo_base64: t.photo
-        })),
-        trailer_tyres: trailerTyres.map(t => ({
-          position: t.position,
-          number: t.number,
-          photo_base64: t.photo
-        })),
-        vehicle_images: vehicleImages.map(v => ({
-          position: v.position,
-          photo_base64: v.photo
-        }))
+        battery1_number: battery1Number || "",
+        ...(battery1Photo && { battery1_photo_base64: battery1Photo }),
+        battery2_number: battery2Number || "",
+        ...(battery2Photo && { battery2_photo_base64: battery2Photo }),
+        ...(odometerReading && { odometer_value: odometerReading }),
+        ...(odometerPhoto && { odometer_photo_base64: odometerPhoto }),
+        prime_tyres: primeTyres
+          .filter((t) => t.number || t.photo)
+          .map(t => ({
+            position: t.position,
+            number: t.number || "",
+            ...(t.photo && { photo_base64: t.photo })
+          })),
+        trailer_tyres: trailerTyres
+          .filter((t) => t.number || t.photo)
+          .map(t => ({
+            position: t.position,
+            number: t.number || "",
+            ...(t.photo && { photo_base64: t.photo })
+          })),
+        vehicle_images: vehicleImages
+          .filter((v) => v.photo)
+          .map(v => ({
+            position: v.position,
+            photo_base64: v.photo
+          })),
       };
 
       const res = await axios.post(`${API}/maintenance/submit`, payload, {
@@ -273,7 +315,7 @@ const MaintenanceForm = () => {
   --------------------------------------------- */
   return (
     <div className="min-h-screen bg-slate-50">
-      
+
       {/* HEADER */}
       <header className="border-b border-slate-200 bg-white sticky top-0 z-50">
         <div className="container mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
@@ -323,7 +365,19 @@ const MaintenanceForm = () => {
           </CardHeader>
 
           <CardContent>
-            <Label className="text-sm font-medium text-slate-700">Vehicle Number *</Label>
+            <div className="flex items-center justify-between mb-2">
+              <Label className="text-sm font-medium text-slate-700">Vehicle Number *</Label>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => fetchVehicles(true)}
+                className="h-7 text-xs"
+                title="Refresh vehicle list"
+              >
+                <RefreshCw className="w-3 h-3 mr-1" />
+                Refresh
+              </Button>
+            </div>
 
             {/* 🔥 SEARCHABLE DROPDOWN HERE */}
             <Popover open={open} onOpenChange={setOpen}>
@@ -345,10 +399,9 @@ const MaintenanceForm = () => {
               >
                 <Command>
 
-                  {/* ⭐ API search trigger */}
+                  {/* ⭐ Search input - no API call needed, just filters local list */}
                   <CommandInput
                     placeholder="Search vehicle…"
-                    onValueChange={(value) => fetchVehicles(value)}
                   />
 
                   <CommandList>
@@ -451,7 +504,7 @@ const MaintenanceForm = () => {
           </CardHeader>
 
           <CardContent>
-            <div className="w-full">  
+            <div className="w-full">
 
               {/* Odometer Input */}
               <div className="space-y-4 p-4 bg-slate-50 rounded-xl w-full">
